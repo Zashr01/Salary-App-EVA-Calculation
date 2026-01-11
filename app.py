@@ -127,9 +127,16 @@ st.set_page_config(
 st.title("💰 Salary App: EVA Calculation")
 
 # --- Cookie Logic ---
-# Initialize Cookie Manager
-cookie_manager = get_manager()
+# --- Cookie Logic ---
+# Initialize Cookie Manager with a key to prevent remounting
+cookie_manager = stx.CookieManager(key="cookie_manager")
 cookies = cookie_manager.get_all()
+
+# Wait for client to load
+if not cookies:
+    # Give a tiny bit of time for cookies to potentially load if it's the very first render
+    time.sleep(0.5)
+    cookies = cookie_manager.get_all()
 
 # Get Device ID from Cookie
 device_id = cookies.get(COOKIE_NAME)
@@ -146,16 +153,23 @@ if url_id:
         cookie_manager.set(COOKIE_NAME, url_id, expires_at=datetime.datetime(2030, 1, 1))
         st.toast("Updated Device ID from URL!", icon="💾")
         time.sleep(1) # Give time to set
-        
+
 if not device_id:
-    # First time user!
-    with st.spinner("Creating your private workspace..."):
-        new_id = create_new_profile()
-        # Set cookie
-        cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
-        # Logic to continue requires reload usually, but we can set session state immediately
-        device_id = new_id
-        st.rerun()
+    # Check if we just set it in session state fallback (prevent infinite loop)
+    if "temp_device_id" in st.session_state:
+        device_id = st.session_state.temp_device_id
+    else:
+        # Really first time user!
+        with st.spinner("Creating your private workspace..."):
+            new_id = create_new_profile()
+            # Set cookie
+            cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
+            
+            # Save to temp session to avoid infinite loop if cookie takes time
+            st.session_state.temp_device_id = new_id
+            
+            time.sleep(1) # Wait for cookie to write
+            st.rerun()
 
 # Store current ID in session for callbacks
 st.session_state.current_device_id = device_id
