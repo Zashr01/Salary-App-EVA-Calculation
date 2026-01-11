@@ -6,13 +6,15 @@ import uuid
 import datetime
 import extra_streamlit_components as stx
 import time
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- Constants & Configuration ---
 DATA_FILE = "devices_config.json"
 COOKIE_NAME = "salary_app_device_id"
-COOKIE_EXPIRY_DAYS = 365
+GOOGLE_SHEET_NAME = "Salary App Database"
 
-# Default values for a new device
+# Default values
 DEFAULT_VALUES = {
     "exchange_rate": 1.0,
     "normal_rate": 120.0,
@@ -36,97 +38,156 @@ DEFAULT_VALUES = {
     "transport_trips": 6
 }
 
-# --- Helper Functions ---
+# --- Database Interface ---
 
-def load_all_data():
-    """Load all devices data from JSON file."""
-    if not os.path.exists(DATA_FILE):
-        return {}
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+class DataManager:
+    def __init__(self):
+        self.use_cloud = False
+        self.sheet = None
+        self.local_data = {}
+        
+        # Try connecting to Google Sheets
+        try:
+            if "gsheets" in st.secrets:
+                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                creds_dict = dict(st.secrets["gsheets"])
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                client = gspread.authorize(creds)
+                self.sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+                self.use_cloud = True
+        except Exception as e:
+            # Fallback to local
+            self.use_cloud = False
+            # We don't print error to avoid scaring user if they haven't set it up yet
+            # print(f"Cloud DB Error: {e}")
 
-def save_all_data(data):
-    """Save all devices data to JSON file."""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+    def load_profile(self, profile_id):
+        if self.use_cloud:
+            try:
+                # Optimized: We might want to cache this or search better, 
+                # but for small User base, fetch_all and find is okay.
+                records = self.sheet.get_all_records()
+                for record in records:
+                    if str(record.get("device_id")) == str(profile_id):
+                        config_str = record.get("config_json", "{}")
+                        return json.loads(config_str)
+                return None
+            except Exception:
+                return None
+        else:
+            # Local JSON Fallback
+            if not os.path.exists(DATA_FILE):
+                return None
+            try:
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+                    return all_data.get(profile_id)
+            except:
+                return None
+
+    def save_profile(self, profile_id, data):
+        data["updated_at"] = str(datetime.datetime.now())
+        
+        if self.use_cloud:
+            try:
+                # Find cell to update or append
+                cell = self.sheet.find(profile_id)
+                config_json = json.dumps(data)
+                
+                if cell:
+                    # Update existing row (Assuming Col 4 is config)
+                    # We should be safer with headers, but for POC:
+                    # Layout: ID | Name | Updated | Config
+                    self.sheet.update_cell(cell.row, 2, data.get("profile_name", "Unknown"))
+                    self.sheet.update_cell(cell.row, 3, data["updated_at"])
+                    self.sheet.update_cell(cell.row, 4, config_json)
+                else:
+                    # Append new
+                    self.sheet.append_row([profile_id, data.get("profile_name", "Unknown"), data["updated_at"], config_json])
+            except Exception as e:
+                st.error(f"Failed to save to cloud: {e}")
+        else:
+            # Local Save
+            all_data = {}
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    try: 
+                        all_data = json.load(f) 
+                    except: 
+                        all_data = {}
+            
+            all_data[profile_id] = data
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(all_data, f, indent=4)
+
+# Initialize global manager
+if "db_manager" not in st.session_state:
+    st.session_state.db_manager = DataManager()
+
+db = st.session_state.db_manager
+
+# --- Helper Functions (Updated to use DB) ---
 
 def create_new_profile():
-    """Create a new profile with a random UUID."""
     new_id = str(uuid.uuid4())
-    all_data = load_all_data()
-    
-    all_data[new_id] = DEFAULT_VALUES.copy()
-    all_data[new_id]["profile_name"] = "My Device"
-    all_data[new_id]["created_at"] = str(datetime.datetime.now())
-    
-    save_all_data(all_data)
+    data = DEFAULT_VALUES.copy()
+    data["profile_name"] = "My Device"
+    data["created_at"] = str(datetime.datetime.now())
+    db.save_profile(new_id, data)
     return new_id
 
 def update_current_profile(profile_id):
-    """Update the current profile data from session state."""
-    if "all_data" not in st.session_state:
-        st.session_state.all_data = load_all_data()
-    
-    # Ensure profile exists in session copy
-    if profile_id not in st.session_state.all_data:
-        st.session_state.all_data[profile_id] = DEFAULT_VALUES.copy()
-        st.session_state.all_data[profile_id]["profile_name"] = "Recovered Profile"
-
-    # Update values
+    # Get current from session
+    current_data = DEFAULT_VALUES.copy()
     for key in DEFAULT_VALUES.keys():
         if key in st.session_state:
-            st.session_state.all_data[profile_id][key] = st.session_state[key]
+            current_data[key] = st.session_state[key]
             
-    # Update Name explicitly if changed
     if "profile_name_input" in st.session_state:
-        st.session_state.all_data[profile_id]["profile_name"] = st.session_state.profile_name_input
-            
-    save_all_data(st.session_state.all_data)
+        current_data["profile_name"] = st.session_state.profile_name_input
+        
+    db.save_profile(profile_id, current_data)
 
 def load_profile_to_state(profile_id):
-    """Load profile data into session state."""
-    all_data = load_all_data()
-    st.session_state.all_data = all_data
+    profile_data = db.load_profile(profile_id)
+    if not profile_data:
+        return False
     
-    if profile_id not in all_data:
-        return False # Profile not found
-        
-    profile_data = all_data[profile_id]
-    
-    # helper to safely get value
     def get_val(k):
         return profile_data.get(k, DEFAULT_VALUES.get(k))
 
-    # Load into session state
     for key in DEFAULT_VALUES.keys():
         st.session_state[key] = get_val(key)
         
-    st.session_state["profile_name_input"] = profile_data.get("profile_name", "My Profile")
+    st.session_state["profile_name_input"] = profile_data.get("profile_name", "My Device")
     return True
 
 def on_input_change():
     """Callback for auto-save."""
     profile_id = st.session_state.get("current_device_id")
     if profile_id:
-        update_current_profile(profile_id)
-
-def get_manager():
-    return stx.CookieManager()
+        # Show saving indicator for Cloud
+        if db.use_cloud:
+            with st.spinner("Syncing to Cloud..."):
+                update_current_profile(profile_id)
+        else:
+            update_current_profile(profile_id)
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="Salary App (Auto)",
-    page_icon="🤖",
+    page_title="Salary App (Cloud)",
+    page_icon="☁️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 st.title("💰 Salary App: EVA Calculation")
 
-# --- Cookie Logic ---
+if db.use_cloud:
+    st.caption("🟢 Connected to Google Sheets")
+else:
+    st.caption("🟠 Running in Local Mode (Config Missing)")
+
 # --- Cookie Logic ---
 # Initialize Cookie Manager with a key to prevent remounting
 cookie_manager = stx.CookieManager(key="cookie_manager")
@@ -179,12 +240,9 @@ st.session_state.current_device_id = device_id
 if "data_loaded" not in st.session_state or st.session_state.get("loaded_id") != device_id:
     success = load_profile_to_state(device_id)
     if not success:
-        # ID exists in cookie but not in file (maybe file deleted?)
-        # Re-create entries for this ID or create new?
-        # Let's clean up and create new to be safe
-        new_id = create_new_profile()
-        cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
-        st.rerun()
+        # ID exists in cookie but not in DB? Treat as new?
+        # Maybe create empty entry
+        update_current_profile(device_id) # initializes defaults
     
     st.session_state.data_loaded = True
     st.session_state.loaded_id = device_id
