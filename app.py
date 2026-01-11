@@ -155,21 +155,22 @@ if url_id:
         time.sleep(1) # Give time to set
 
 if not device_id:
-    # Check if we just set it in session state fallback (prevent infinite loop)
+    # --- NO ID FOUND: SHOW WELCOME SCREEN (Breaks Infinite Loop) ---
+    st.info("👋 Welcome! It seems this is your first time here (or cookies are cleared).")
+    
+    if st.button("🚀 Start Using App", type="primary"):
+        with st.spinner("Setting up your workspace..."):
+            new_id = create_new_profile()
+            cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
+            st.session_state.temp_device_id = new_id
+            time.sleep(1) # Wait for cookie write
+            st.rerun()
+            
+    # Check if we just set it in session state (fallback for immediate reload)
     if "temp_device_id" in st.session_state:
         device_id = st.session_state.temp_device_id
     else:
-        # Really first time user!
-        with st.spinner("Creating your private workspace..."):
-            new_id = create_new_profile()
-            # Set cookie
-            cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
-            
-            # Save to temp session to avoid infinite loop if cookie takes time
-            st.session_state.temp_device_id = new_id
-            
-            time.sleep(1) # Wait for cookie to write
-            st.rerun()
+        st.stop() # Stop execution here until user clicks button
 
 # Store current ID in session for callbacks
 st.session_state.current_device_id = device_id
