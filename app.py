@@ -109,10 +109,20 @@ def on_input_change():
     if profile_id:
         update_current_profile(profile_id)
 
+def restore_profile():
+    """Callback to restore profile from input."""
+    restore_id = st.session_state.get("restore_id_input", "").strip()
+    if restore_id:
+        all_data = load_all_data()
+        if restore_id in all_data:
+             st.query_params["id"] = restore_id
+        else:
+            st.error("❌ Profile ID not found!")
+
 # --- Page Config ---
 st.set_page_config(
     page_title="Salary App (Private)",
-    page_icon="�",
+    page_icon="🔒",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -129,15 +139,36 @@ if not current_id:
     st.markdown("""
     ### Welcome!
     This application uses **Private Workspaces**. 
-    
-    To get started, create a new private profile. You will get a unique link that you can bookmark and use on any device.
-    Information is stored securely and isolated from others.
     """)
     
-    if st.button("🚀 Create New Private Workspace", type="primary"):
-        new_id = create_new_profile()
-        st.query_params["id"] = new_id
-        st.rerun()
+    col_new, col_restore = st.columns(2)
+    
+    with col_new:
+        st.info("👋 New User?")
+        if st.button("🚀 Create New Private Workspace", type="primary"):
+            new_id = create_new_profile()
+            st.query_params["id"] = new_id
+            st.rerun()
+            
+    with col_restore:
+        st.warning("🔄 Have an existing ID?")
+        st.text_input("Enter your Profile ID:", key="restore_id_input", placeholder="e.g. a1b2-c3d4...")
+        if st.button("Restore Workspace"):
+             restore_profile()
+             st.rerun()
+
+    st.divider()
+    with st.expander("📱 iOS / Android Troubleshooting"):
+        st.markdown("""
+        **Problem:** "Add to Home Screen" doesn't save my data!
+        **Reason:** Some phones only save the main website link, not your private ID link.
+        
+        **Solution:** 
+        1. Open your workspace first.
+        2. Copy your **Profile ID** from the sidebar.
+        3. Save it somewhere (Notes app).
+        4. If your Home Screen app opens empty, just paste your ID in the "Restore Workspace" box above!
+        """)
 
 else:
     # --- APP PAGE ---
@@ -161,8 +192,22 @@ else:
     st.sidebar.header("👤 Profile Settings")
     st.sidebar.text_input("Profile Name", key="profile_name_input", on_change=on_input_change)
     
-    st.sidebar.info(f"**Current ID:** `{current_id}`")
-    st.sidebar.warning("🔖 **Important:** Bookmark this page or save the URL to access your data later!")
+    st.sidebar.info(f"**Your Profile ID:**\n\n`{current_id}`")
+    st.sidebar.caption("Tap ID to copy (on some devices) or select and copy manually.")
+    
+    with st.sidebar.expander("� **Mobile Setup Guide**", expanded=False):
+        st.markdown(f"""
+        **To save this app correctly:**
+        
+        1. **iOS (Safari):**
+           - Tap 'Share' -> 'Add to Home Screen'.
+           - *If it opens empty later:* Come back to the main page and paste your ID: `{current_id}`
+           
+        2. **Android (Chrome):**
+           - Tap menu (⋮) -> 'Add to Home screen'.
+           
+        **⚠️ Vital:** Save your ID `{current_id}` in your Notes app just in case! 
+        """)
     
     st.sidebar.divider()
     
