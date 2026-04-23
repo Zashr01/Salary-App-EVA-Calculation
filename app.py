@@ -1,0 +1,435 @@
+import streamlit as st
+import pandas as pd
+import json
+import os
+import uuid
+import datetime
+import extra_streamlit_components as stx
+import time
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
+# --- Constants & Configuration ---
+DATA_FILE = "devices_config.json"
+COOKIE_NAME = "salary_app_device_id"
+GOOGLE_SHEET_NAME = "Salary App Database"
+
+# Default values
+DEFAULT_VALUES = {
+    "exchange_rate": 1.0,
+    "normal_rate": 120.0,
+    "ot_rate": 300.0,
+    "super_ot_rate": 420.0,
+    "per_diem_euro_mult": 4.0,
+    "per_diem_other_mult": 3.5,
+    "withdrawal_currency": "USD",
+    "cathay_rate": 31.6,
+    "superrich_rate_usd": 34.0,
+    "superrich_rate_twd": 1.05,
+    "transport_rate": 700.0,
+    "bh_hours": 89,
+    "bh_mins": 38,
+    "p1_hours": 175,
+    "p1_mins": 43,
+    "p2_hours": 158,
+    "p2_mins": 37,
+    "base_salary": 16000.0,
+    "position_allowance": 1000.0,
+    "transport_trips": 6
+}
+
+# --- Database Interface ---
+
+class DataManager:
+    def __init__(self):
+        self.use_cloud = False
+        self.sheet = None
+        self.local_data = {}
+        
+        # Try connecting to Google Sheets
+        try:
+            if "gsheets" in st.secrets:
+                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                creds_dict = dict(st.secrets["gsheets"])
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                client = gspread.authorize(creds)
+                self.sheet = client.open(GOOGLE_SHEET_NAME).sheet1
+                self.use_cloud = True
+        except Exception as e:
+            # Fallback to local
+            self.use_cloud = False
+            # We don't print error to avoid scaring user if they haven't set it up yet
+            # print(f"Cloud DB Error: {e}")
+
+    def load_profile(self, profile_id):
+        if self.use_cloud:
+            try:
+                # Optimized: We might want to cache this or search better, 
+                # but for small User base, fetch_all and find is okay.
+                records = self.sheet.get_all_records()
+                for record in records:
+                    if str(record.get("device_id")) == str(profile_id):
+                        config_str = record.get("config_json", "{}")
+                        return json.loads(config_str)
+                return None
+            except Exception:
+                return None
+        else:
+            # Local JSON Fallback
+            if not os.path.exists(DATA_FILE):
+                return None
+            try:
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    all_data = json.load(f)
+                    return all_data.get(profile_id)
+            except:
+                return None
+
+    def save_profile(self, profile_id, data):
+        data["updated_at"] = str(datetime.datetime.now())
+        
+        if self.use_cloud:
+            try:
+                # Find cell to update or append
+                cell = self.sheet.find(profile_id)
+                config_json = json.dumps(data)
+                
+                if cell:
+                    # Update existing row (Assuming Col 4 is config)
+                    # We should be safer with headers, but for POC:
+                    # Layout: ID | Name | Updated | Config
+                    self.sheet.update_cell(cell.row, 2, data.get("profile_name", "Unknown"))
+                    self.sheet.update_cell(cell.row, 3, data["updated_at"])
+                    self.sheet.update_cell(cell.row, 4, config_json)
+                else:
+                    # Append new
+                    self.sheet.append_row([profile_id, data.get("profile_name", "Unknown"), data["updated_at"], config_json])
+            except Exception as e:
+                st.error(f"Failed to save to cloud: {e}")
+        else:
+            # Local Save
+            all_data = {}
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, "r", encoding="utf-8") as f:
+                    try: 
+                        all_data = json.load(f) 
+                    except: 
+                        all_data = {}
+            
+            all_data[profile_id] = data
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(all_data, f, indent=4)
+
+# Initialize global manager
+if "db_manager" not in st.session_state:
+    st.session_state.db_manager = DataManager()
+
+db = st.session_state.db_manager
+
+# --- Helper Functions (Updated to use DB) ---
+
+def create_new_profile():
+    new_id = str(uuid.uuid4())
+    data = DEFAULT_VALUES.copy()
+    data["profile_name"] = "My Device"
+    data["created_at"] = str(datetime.datetime.now())
+    db.save_profile(new_id, data)
+    return new_id
+
+def update_current_profile(profile_id):
+    # Get current from session
+    current_data = DEFAULT_VALUES.copy()
+    for key in DEFAULT_VALUES.keys():
+        if key in st.session_state:
+            current_data[key] = st.session_state[key]
+            
+    if "profile_name_input" in st.session_state:
+        current_data["profile_name"] = st.session_state.profile_name_input
+        
+    db.save_profile(profile_id, current_data)
+
+def load_profile_to_state(profile_id):
+    profile_data = db.load_profile(profile_id)
+    if not profile_data:
+        return False
+    
+    def get_val(k):
+        return profile_data.get(k, DEFAULT_VALUES.get(k))
+
+    for key in DEFAULT_VALUES.keys():
+        st.session_state[key] = get_val(key)
+        
+    st.session_state["profile_name_input"] = profile_data.get("profile_name", "My Device")
+    return True
+
+def on_input_change():
+    """Callback for auto-save."""
+    profile_id = st.session_state.get("current_device_id")
+    if profile_id:
+        # Show saving indicator for Cloud
+        if db.use_cloud:
+            with st.spinner("Syncing to Cloud..."):
+                update_current_profile(profile_id)
+        else:
+            update_current_profile(profile_id)
+
+# --- Page Config ---
+st.set_page_config(
+    page_title="Salary App (Cloud)",
+    page_icon="☁️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.title("💰 Salary App: EVA Calculation")
+
+if db.use_cloud:
+    st.caption("🟢 Connected to Google Sheets")
+else:
+    st.caption("🟠 Running in Local Mode (Config Missing)")
+
+# --- Cookie Logic ---
+# Initialize Cookie Manager with a key to prevent remounting
+cookie_manager = stx.CookieManager(key="cookie_manager")
+cookies = cookie_manager.get_all()
+
+# Wait for client to load
+if not cookies:
+    # Give a tiny bit of time for cookies to potentially load if it's the very first render
+    time.sleep(0.5)
+    cookies = cookie_manager.get_all()
+
+# Get Device ID from Cookie
+device_id = cookies.get(COOKIE_NAME)
+
+# Manual Override (Restore)
+query_params = st.query_params
+url_id = query_params.get("id", None)
+
+if url_id:
+    # User forcing a specific ID via URL
+    device_id = url_id
+    # We should update the cookie to match this new ID
+    if cookies.get(COOKIE_NAME) != url_id:
+        cookie_manager.set(COOKIE_NAME, url_id, expires_at=datetime.datetime(2030, 1, 1))
+        st.toast("Updated Device ID from URL!", icon="💾")
+        time.sleep(1) # Give time to set
+
+if not device_id:
+    # --- NO ID FOUND: SHOW WELCOME SCREEN (Breaks Infinite Loop) ---
+    st.info("👋 Welcome! It seems this is your first time here (or cookies are cleared).")
+    
+    if st.button("🚀 Start Using App", type="primary"):
+        with st.spinner("Setting up your workspace..."):
+            new_id = create_new_profile()
+            cookie_manager.set(COOKIE_NAME, new_id, expires_at=datetime.datetime(2030, 1, 1))
+            st.session_state.temp_device_id = new_id
+            time.sleep(1) # Wait for cookie write
+            st.rerun()
+            
+    # Check if we just set it in session state (fallback for immediate reload)
+    if "temp_device_id" in st.session_state:
+        device_id = st.session_state.temp_device_id
+    else:
+        st.stop() # Stop execution here until user clicks button
+
+# Store current ID in session for callbacks
+st.session_state.current_device_id = device_id
+
+# Load Data
+if "data_loaded" not in st.session_state or st.session_state.get("loaded_id") != device_id:
+    success = load_profile_to_state(device_id)
+    if not success:
+        # ID exists in cookie but not in DB? Treat as new?
+        # Maybe create empty entry
+        update_current_profile(device_id) # initializes defaults
+    
+    st.session_state.data_loaded = True
+    st.session_state.loaded_id = device_id
+
+# --- Application UI ---
+
+# --- Sidebar ---
+st.sidebar.header("👤 Profile Settings")
+st.sidebar.text_input("Profile Name", key="profile_name_input", on_change=on_input_change)
+
+st.sidebar.success(f"**Auto-Login Active**\n\nDevice ID: `{device_id[:8]}...`")
+
+with st.sidebar.expander("🛠️ Advanced / Restore"):
+    st.markdown(f"**Full ID:** `{device_id}`")
+    st.text_input("Restore / Switch Profile ID:", key="restore_input")
+    if st.button("Load Profile"):
+        rid = st.session_state.restore_input.strip()
+        if rid:
+            cookie_manager.set(COOKIE_NAME, rid, expires_at=datetime.datetime(2030, 1, 1))
+            st.rerun()
+
+st.sidebar.divider()
+
+# --- Rates Configuration ---
+st.sidebar.header("⚙️ Rates Configuration")
+
+# Exchange Rate
+st.sidebar.number_input("Exchange Rate (THB/Unit)", step=0.01, key="exchange_rate", on_change=on_input_change)
+
+st.sidebar.subheader("Hourly Rates (THB)")
+st.sidebar.number_input("Normal Rate", step=1.0, key="normal_rate", on_change=on_input_change)
+st.sidebar.number_input("OT Rate (Hour 71-80)", step=1.0, key="ot_rate", on_change=on_input_change)
+st.sidebar.number_input("Super OT Rate (Hour >80)", step=1.0, key="super_ot_rate", on_change=on_input_change)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💸 Per Diem Conversion")
+
+# Step 1: Withdraw
+st.sidebar.caption("Step 1: Withdrawal (Taiwan)")
+st.sidebar.number_input("Per Diem Multiplier (EUR/AME/AUS)", step=0.1, key="per_diem_euro_mult", on_change=on_input_change)
+st.sidebar.number_input("Per Diem Multiplier (Other)", step=0.1, key="per_diem_other_mult", on_change=on_input_change)
+
+st.sidebar.radio("Withdraw Per Diem As:", ["USD", "TWD"], key="withdrawal_currency", on_change=on_input_change)
+
+cathay_rate = 1.0
+if st.session_state.withdrawal_currency == "TWD":
+    st.sidebar.markdown("""<a href="https://www.cathaybk.com.tw/cathaybk/personal/product/deposit/currency-billboard/" target="_blank"> Check Cathay United Bank Rate (USD -> TWD)</a>""", unsafe_allow_html=True)
+    st.sidebar.number_input("Cathay Rate (USD to TWD)", step=0.1, key="cathay_rate", on_change=on_input_change)
+    cathay_rate = st.session_state.cathay_rate
+
+# Step 2: Exchange
+st.sidebar.caption("Step 2: Exchange (Thailand)")
+st.sidebar.markdown("""<a href="https://www.superrichthailand.com/#!/en/exchange#rate-section" target="_blank"> Check SuperRich Thailand Rate</a>""", unsafe_allow_html=True)
+
+if st.session_state.withdrawal_currency == "USD":
+    st.sidebar.number_input("SuperRich Rate (USD -> THB)", step=0.1, key="superrich_rate_usd", on_change=on_input_change)
+    superrich_rate = st.session_state.superrich_rate_usd
+else:
+    st.sidebar.number_input("SuperRich Rate (TWD -> THB)", step=0.01, key="superrich_rate_twd", on_change=on_input_change)
+    superrich_rate = st.session_state.superrich_rate_twd
+
+st.sidebar.subheader("Transportation")
+st.sidebar.number_input("Transport Rate per Trip", step=50.0, key="transport_rate", on_change=on_input_change)
+
+# --- Main Inputs ---
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("⏱️ Block Hours")
+    st.number_input("Block Hours (Hours)", step=1, min_value=0, key="bh_hours", on_change=on_input_change)
+    st.number_input("Block Hours (Minutes)", step=1, max_value=59, min_value=0, key="bh_mins", on_change=on_input_change)
+    
+    st.subheader("🌍 Per Diem")
+    st.number_input("Per Diem (EUR/AME/AUS) Hours", step=1, min_value=0, key="p1_hours", on_change=on_input_change)
+    st.number_input("Per Diem (EUR/AME/AUS) Minutes", step=1, max_value=59, min_value=0, key="p1_mins", on_change=on_input_change)
+    
+    st.number_input("Per Diem (Other regions) Hours", step=1, min_value=0, key="p2_hours", on_change=on_input_change)
+    st.number_input("Per Diem (Other regions) Minutes", step=1, max_value=59, min_value=0, key="p2_mins", on_change=on_input_change)
+
+with col2:
+    st.subheader("💵 Salary & Other")
+    st.number_input("Base Salary", step=100.0, key="base_salary", on_change=on_input_change)
+    st.number_input("Position Allowance", step=100.0, key="position_allowance", on_change=on_input_change)
+    st.number_input("Transportation (Trips)", step=1, min_value=0, key="transport_trips", on_change=on_input_change)
+
+# --- Calculations ---
+# Extract values from session state for clarity in formula
+bh_hours = st.session_state.bh_hours
+bh_mins = st.session_state.bh_mins
+normal_rate = st.session_state.normal_rate
+ot_rate = st.session_state.ot_rate
+super_ot_rate = st.session_state.super_ot_rate
+p1_hours = st.session_state.p1_hours
+p1_mins = st.session_state.p1_mins
+p2_hours = st.session_state.p2_hours
+p2_mins = st.session_state.p2_mins
+per_diem_euro_mult = st.session_state.per_diem_euro_mult
+per_diem_other_mult = st.session_state.per_diem_other_mult
+base_salary = st.session_state.base_salary
+position_allowance = st.session_state.position_allowance
+transport_trips = st.session_state.transport_trips
+transport_rate = st.session_state.transport_rate
+
+# 1. Block Hour Income
+total_bh = bh_hours + (bh_mins / 60.0)
+bh_normal_hrs = min(total_bh, 70)
+bh_ot_hrs = max(min(total_bh - 70, 10), 0)
+bh_super_ot_hrs = max(total_bh - 80, 0)
+
+income_normal = bh_normal_hrs * normal_rate
+income_ot = bh_ot_hrs * ot_rate
+income_super_ot = bh_super_ot_hrs * super_ot_rate
+total_bh_income = income_normal + income_ot + income_super_ot
+
+# 2. Per Diem Income logic
+# Base (USD)
+p1_total = p1_hours + (p1_mins / 60.0)
+p2_total = p2_hours + (p2_mins / 60.0)
+total_per_diem_units = (per_diem_euro_mult * p1_total) + (per_diem_other_mult * p2_total)
+per_diem_base_usd = total_per_diem_units
+
+# Step 1: Withdraw
+if st.session_state.withdrawal_currency == "TWD":
+    holding_amount = per_diem_base_usd * cathay_rate
+    holding_currency = "TWD"
+    step1_trace = f"{per_diem_base_usd:,.2f} USD * {cathay_rate} (Cathay) = {holding_amount:,.2f} TWD"
+else:
+    holding_amount = per_diem_base_usd
+    holding_currency = "USD"
+    step1_trace = f"{per_diem_base_usd:,.2f} USD (No conversion)"
+
+# Step 2: Exchange to THB
+per_diem_thb = holding_amount * superrich_rate
+step2_trace = f"{holding_amount:,.2f} {holding_currency} * {superrich_rate} (SuperRich) = {per_diem_thb:,.2f} THB"
+
+# 4. Other
+transport_income = transport_trips * transport_rate
+
+# Total
+grand_total_thb = total_bh_income + per_diem_thb + base_salary + position_allowance + transport_income
+
+# --- Display Results ---
+st.divider()
+st.subheader(f"📊 Summary for {st.session_state.get('profile_name_input', 'Profile')}")
+
+metric_col1, metric_col2, metric_col3 = st.columns(3)
+
+metric_col1.metric("Total Monthly Income (THB)", f"{grand_total_thb:,.2f} THB")
+metric_col2.metric("Per Diem Income (Converted)", f"{per_diem_thb:,.2f} THB")
+metric_col3.metric("Withdrawal Amount", f"{holding_amount:,.2f} {holding_currency}")
+
+st.markdown("### Detailed Breakdown")
+breakdown_data = {
+    "Category": [
+        "Block Hour (Normal 0-70h)", 
+        "Block Hour (OT 71-80h)",
+        "Block Hour (Super OT >80h)",
+        "Per Diem Base (USD)",
+        "Step 1: Withdrawal",
+        "Step 2: Exchange (THB)",
+        "Base Salary",
+        "Position Allowance",
+        "Transportation"
+    ],
+    "Details": [
+        f"{bh_normal_hrs:.2f} hrs @ {normal_rate} THB",
+        f"{bh_ot_hrs:.2f} hrs @ {ot_rate} THB",
+        f"{bh_super_ot_hrs:.2f} hrs @ {super_ot_rate} THB",
+        f"{p1_total:.2f}hrs*4 + {p2_total:.2f}hrs*3.5",
+        step1_trace,
+        step2_trace,
+        "Flat Rate",
+        "Flat Rate",
+        f"{transport_trips} trips @ {transport_rate} THB"
+    ],
+    "Amount": [
+        f"{income_normal:,.2f} THB",
+        f"{income_ot:,.2f} THB",
+        f"{income_super_ot:,.2f} THB",
+        f"{per_diem_base_usd:,.2f} USD",
+        f"{holding_amount:,.2f} {holding_currency}",
+        f"{per_diem_thb:,.2f} THB",
+        f"{base_salary:,.2f} THB",
+        f"{position_allowance:,.2f} THB",
+        f"{transport_income:,.2f} THB"
+    ]
+}
+
+df_breakdown = pd.DataFrame(breakdown_data)
+st.table(df_breakdown)

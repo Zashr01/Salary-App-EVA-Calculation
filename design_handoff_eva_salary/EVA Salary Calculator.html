@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EVA Salary</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  /* EVA Air Brand */
+  --eva-green: #009A42;
+  --eva-green-dark: #007A34;
+  --eva-green-light: #E6F5ED;
+  --eva-green-mid: #CCE9D8;
+  --eva-orange: #EA5400;
+  --eva-orange-light: #FEF0E6;
+
+  /* Neutral palette */
+  --bg: #F7F8F6;
+  --surface: #FFFFFF;
+  --border: #E4E8E2;
+  --border-strong: #CBD2C7;
+  --text: #111810;
+  --text-mid: #4A5248;
+  --text-muted: #8A9488;
+  --text-faint: #B8BDB6;
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --sidebar-w: 304px;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 4px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+input[type=number] { -moz-appearance: textfield; }
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+#root { height: 100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "showBreakdown": true,
+  "compactMode": false
+}/*EDITMODE-END*/;
+
+const DEFAULT_VALUES = {
+  exchange_rate: 1.0,
+  normal_rate: 120.0,
+  ot_rate: 300.0,
+  super_ot_rate: 420.0,
+  per_diem_euro_mult: 4.0,
+  per_diem_other_mult: 3.5,
+  withdrawal_currency: "USD",
+  cathay_rate: 31.6,
+  superrich_rate_usd: 34.0,
+  superrich_rate_twd: 1.05,
+  transport_rate: 700.0,
+  bh_hours: 89,
+  bh_mins: 38,
+  p1_hours: 175,
+  p1_mins: 43,
+  p2_hours: 158,
+  p2_mins: 37,
+  base_salary: 16000.0,
+  position_allowance: 1000.0,
+  transport_trips: 6,
+  profile_name: "My Profile",
+};
+
+const fmt = (n, dec = 2) => n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+
+function usePersist(key, initial) {
+  const stored = (() => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } })();
+  const [state, setState] = useState(stored !== null ? stored : initial);
+  const set = useCallback(v => { setState(v); try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }, [key]);
+  return [state, set];
+}
+
+/* ── SVG Icons ── */
+const I = ({ d, size = 16, stroke = 'currentColor', fill = 'none', sw = 1.75 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+    {Array.isArray(d) ? d.map((p, i) => <path key={i} d={p} />) : <path d={d} />}
+  </svg>
+);
+const IconMenu    = ({s}) => <I size={s||18} d="M3 6h18M3 12h18M3 18h18" />;
+const IconX       = ({s}) => <I size={s||18} d="M18 6 6 18M6 6l12 12" />;
+const IconChevR   = ({s}) => <I size={s||14} d="m9 18 6-6-6-6" />;
+const IconChevD   = ({s}) => <I size={s||14} d="m6 9 6 6 6-6" />;
+const IconClock   = ({s}) => <I size={s||15} d={["M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z","M12 6v6l4 2"]} />;
+const IconGlobe   = ({s}) => <I size={s||15} d={["M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z","M2 12h20","M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"]} />;
+const IconDollar  = ({s}) => <I size={s||15} d={["M12 1v22","M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"]} />;
+const IconCog     = ({s}) => <I size={s||15} d={["M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z","M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"]} />;
+const IconRefresh = ({s}) => <I size={s||14} d={["M23 4v6h-6","M1 20v-6h6","M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"]} />;
+const IconPlane   = ({s}) => (
+  <svg width={s||16} height={s||16} viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+  </svg>
+);
+
+/* ── Shared styles ── */
+const inputBase = (focused) => ({
+  width: '100%', outline: 'none',
+  background: focused ? '#fff' : '#fff',
+  border: `1.5px solid ${focused ? 'var(--eva-green)' : 'var(--border)'}`,
+  borderRadius: 'var(--radius-sm)',
+  padding: '9px 12px',
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: 14, fontWeight: 500, color: 'var(--text)',
+  transition: 'border-color 0.15s',
+  boxShadow: focused ? '0 0 0 3px rgba(0,154,66,0.1)' : 'var(--shadow-sm)',
+});
+
+/* ── NumInput ── */
+const NumInput = ({ label, value, onChange, step = 1, min, max, suffix, note, small }) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      {label && <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.055em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</label>}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          type="number" value={value} step={step} min={min} max={max}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
+          style={{ ...inputBase(focused), paddingRight: suffix ? 36 : 12 }}
+        />
+        {suffix && <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', pointerEvents: 'none', letterSpacing: '0.02em' }}>{suffix}</span>}
+      </div>
+      {note && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{note}</span>}
+    </div>
+  );
+};
+
+/* ── HHMMInput ── */
+const HHMMInput = ({ label, hours, mins, onH, onM, sublabel }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+      <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.055em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</label>
+      {sublabel && <span style={{ fontSize: 11, color: 'var(--eva-green)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{sublabel}</span>}
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <NumInput value={hours} onChange={onH} step={1} min={0} suffix="h" />
+      <NumInput value={mins} onChange={onM} step={1} min={0} max={59} suffix="m" />
+    </div>
+  </div>
+);
+
+/* ── Divider ── */
+const Divider = () => <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />;
+
+/* ── Section Header ── */
+const SectionHead = ({ icon, title, sub }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px 14px', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--eva-green-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--eva-green)', flexShrink: 0 }}>
+      {icon}
+    </div>
+    <div>
+      <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 14, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>}
+    </div>
+  </div>
+);
+
+/* ── Card ── */
+const Card = ({ children, style }) => (
+  <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)', ...style }}>
+    {children}
+  </div>
+);
+
+/* ── Sidebar ── */
+const Sidebar = ({ vals, setVal, open, onClose }) => {
+  const [sec, setSec] = useState('rates');
+  const tabs = [['rates', 'Rates'], ['perdiem', 'Per Diem'], ['exchange', 'Exchange'], ['transport', 'Transport']];
+
+  return (
+    <>
+      <div onClick={onClose} style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 49, backdropFilter: 'blur(2px)',
+        opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none', transition: 'opacity 0.2s',
+      }} />
+      <aside style={{
+        position: 'fixed', top: 0, left: 0, bottom: 0, width: 'var(--sidebar-w)',
+        background: 'var(--surface)', borderRight: '1px solid var(--border)',
+        zIndex: 50, transform: open ? 'none' : 'translateX(-100%)',
+        transition: 'transform 0.26s cubic-bezier(0.4,0,0.2,1)',
+        display: 'flex', flexDirection: 'column', overflowY: 'auto',
+        boxShadow: open ? 'var(--shadow-lg)' : 'none',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ color: 'var(--eva-green)' }}><IconCog s={16} /></div>
+            <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 14 }}>Configuration</span>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4 }}>
+            <IconX s={18} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+          {tabs.map(([id, label]) => (
+            <button key={id} onClick={() => setSec(id)} style={{
+              flex: 1, padding: '10px 4px', border: 'none', background: 'transparent', cursor: 'pointer',
+              fontSize: 11, fontWeight: 600, fontFamily: "'Inter', sans-serif", letterSpacing: '0.04em',
+              color: sec === id ? 'var(--eva-green)' : 'var(--text-muted)',
+              borderBottom: `2px solid ${sec === id ? 'var(--eva-green)' : 'transparent'}`,
+              transition: 'all 0.15s',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 18px', display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
+          {sec === 'rates' && <>
+            <NumInput label="Exchange Rate" value={vals.exchange_rate} onChange={v => setVal('exchange_rate', v)} step={0.01} suffix="×" />
+            <Divider />
+            <NumInput label="Normal Rate (0–70h)" value={vals.normal_rate} onChange={v => setVal('normal_rate', v)} step={1} suffix="฿/h" />
+            <NumInput label="OT Rate (71–80h)" value={vals.ot_rate} onChange={v => setVal('ot_rate', v)} step={1} suffix="฿/h" />
+            <NumInput label="Super OT Rate (>80h)" value={vals.super_ot_rate} onChange={v => setVal('super_ot_rate', v)} step={1} suffix="฿/h" />
+            <div style={{ background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[['0 – 70 hrs', vals.normal_rate, 'Normal'], ['71 – 80 hrs', vals.ot_rate, 'OT'], ['> 80 hrs', vals.super_ot_rate, 'Super OT']].map(([r, v, t]) => (
+                <div key={r} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{r} <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>({t})</span></span>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: 'var(--eva-green)' }}>฿{v}</span>
+                </div>
+              ))}
+            </div>
+          </>}
+
+          {sec === 'perdiem' && <>
+            <NumInput label="EUR / AME / AUS Multiplier" value={vals.per_diem_euro_mult} onChange={v => setVal('per_diem_euro_mult', v)} step={0.1} suffix="×" />
+            <NumInput label="Other Regions Multiplier" value={vals.per_diem_other_mult} onChange={v => setVal('per_diem_other_mult', v)} step={0.1} suffix="×" />
+            <Divider />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.055em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Withdraw As</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {['USD', 'TWD'].map(c => (
+                  <button key={c} onClick={() => setVal('withdrawal_currency', c)} style={{
+                    padding: '9px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    background: vals.withdrawal_currency === c ? 'var(--eva-green)' : 'var(--bg)',
+                    border: `1.5px solid ${vals.withdrawal_currency === c ? 'var(--eva-green)' : 'var(--border)'}`,
+                    color: vals.withdrawal_currency === c ? '#fff' : 'var(--text-mid)',
+                    fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                    transition: 'all 0.15s',
+                  }}>{c}</button>
+                ))}
+              </div>
+            </div>
+            {vals.withdrawal_currency === 'TWD' && (
+              <NumInput label="Cathay Rate (USD → TWD)" value={vals.cathay_rate} onChange={v => setVal('cathay_rate', v)} step={0.1} suffix="rate" note="cathaybk.com.tw" />
+            )}
+          </>}
+
+          {sec === 'exchange' && <>
+            <div style={{ background: 'var(--eva-green-light)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', fontSize: 12, color: 'var(--eva-green-dark)', lineHeight: 1.5 }}>
+              SuperRich Thailand daily rate. Check superrichthailand.com before entering.
+            </div>
+            {vals.withdrawal_currency === 'USD'
+              ? <NumInput label="SuperRich Rate (USD → THB)" value={vals.superrich_rate_usd} onChange={v => setVal('superrich_rate_usd', v)} step={0.1} />
+              : <NumInput label="SuperRich Rate (TWD → THB)" value={vals.superrich_rate_twd} onChange={v => setVal('superrich_rate_twd', v)} step={0.01} />
+            }
+          </>}
+
+          {sec === 'transport' && <>
+            <NumInput label="Rate per Trip" value={vals.transport_rate} onChange={v => setVal('transport_rate', v)} step={50} suffix="฿" />
+          </>}
+        </div>
+      </aside>
+    </>
+  );
+};
+
+/* ── Main App ── */
+function App() {
+  const [tweaks, setTweaks] = usePersist('eva_tweaks2', TWEAK_DEFAULTS);
+  const [vals, setValsRaw] = usePersist('eva_vals2', DEFAULT_VALUES);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [tab, setTab] = useState('inputs');
+
+  const setVal = useCallback((k, v) => setValsRaw(prev => ({ ...prev, [k]: v })), [setValsRaw]);
+
+  /* Calculations */
+  const total_bh = vals.bh_hours + vals.bh_mins / 60;
+  const bh_n = Math.min(total_bh, 70);
+  const bh_ot = Math.max(Math.min(total_bh - 70, 10), 0);
+  const bh_sot = Math.max(total_bh - 80, 0);
+  const inc_n = bh_n * vals.normal_rate;
+  const inc_ot = bh_ot * vals.ot_rate;
+  const inc_sot = bh_sot * vals.super_ot_rate;
+  const total_bh_inc = inc_n + inc_ot + inc_sot;
+
+  const p1_total = vals.p1_hours + vals.p1_mins / 60;
+  const p2_total = vals.p2_hours + vals.p2_mins / 60;
+  const pd_usd = (vals.per_diem_euro_mult * p1_total) + (vals.per_diem_other_mult * p2_total);
+  const sr = vals.withdrawal_currency === 'USD' ? vals.superrich_rate_usd : vals.superrich_rate_twd;
+  const hold_amt = vals.withdrawal_currency === 'TWD' ? pd_usd * vals.cathay_rate : pd_usd;
+  const hold_ccy = vals.withdrawal_currency;
+  const pd_thb = hold_amt * sr;
+
+  const trans_inc = vals.transport_trips * vals.transport_rate;
+  const grand = total_bh_inc + pd_thb + vals.base_salary + vals.position_allowance + trans_inc;
+
+  /* Tweaks wiring */
+  useEffect(() => {
+    const h = e => {
+      if (e.data?.type === '__activate_edit_mode') setTweaksOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    };
+    window.addEventListener('message', h);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', h);
+  }, []);
+
+  const setTweak = (k, v) => {
+    const next = { ...tweaks, [k]: v };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+  };
+
+  const breakdown = [
+    { cat: 'Block Hours', color: 'var(--eva-green)', rows: [
+      { label: 'Normal (0–70h)', detail: `${fmt(bh_n)} h × ฿${vals.normal_rate}`, amount: inc_n, ccy: 'THB' },
+      { label: 'OT (71–80h)', detail: `${fmt(bh_ot)} h × ฿${vals.ot_rate}`, amount: inc_ot, ccy: 'THB' },
+      { label: 'Super OT (>80h)', detail: `${fmt(bh_sot)} h × ฿${vals.super_ot_rate}`, amount: inc_sot, ccy: 'THB' },
+    ]},
+    { cat: 'Per Diem', color: 'var(--eva-orange)', rows: [
+      { label: 'Base', detail: `${fmt(p1_total)}h×${vals.per_diem_euro_mult} + ${fmt(p2_total)}h×${vals.per_diem_other_mult}`, amount: pd_usd, ccy: 'USD' },
+      { label: hold_ccy === 'TWD' ? `Withdrawal (×${vals.cathay_rate} Cathay)` : 'Withdrawal (USD)', detail: `→ ${hold_ccy}`, amount: hold_amt, ccy: hold_ccy },
+      { label: `Exchange (×${sr} SuperRich)`, detail: `→ THB`, amount: pd_thb, ccy: 'THB' },
+    ]},
+    { cat: 'Fixed & Allowances', color: '#6B7CFF', rows: [
+      { label: 'Base Salary', detail: 'Flat', amount: vals.base_salary, ccy: 'THB' },
+      { label: 'Position Allowance', detail: 'Flat', amount: vals.position_allowance, ccy: 'THB' },
+      { label: 'Transportation', detail: `${vals.transport_trips} trips × ฿${vals.transport_rate}`, amount: trans_inc, ccy: 'THB' },
+    ]},
+  ];
+
+  const segments = [
+    { v: total_bh_inc, color: 'var(--eva-green)', label: 'Block Hours' },
+    { v: pd_thb, color: 'var(--eva-orange)', label: 'Per Diem' },
+    { v: vals.base_salary + vals.position_allowance, color: '#6B7CFF', label: 'Salary' },
+    { v: trans_inc, color: 'var(--text-faint)', label: 'Transport' },
+  ];
+
+  const pct = v => ((v / grand) * 100).toFixed(1);
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
+      <Sidebar vals={vals} setVal={setVal} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* ── Header ── */}
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 40,
+        background: 'rgba(247,248,246,0.92)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid var(--border)',
+        height: 56, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px',
+      }}>
+        <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 5, borderRadius: 'var(--radius-sm)', transition: 'background 0.1s' }}
+          onMouseOver={e => e.currentTarget.style.background = 'var(--eva-green-light)'}
+          onMouseOut={e => e.currentTarget.style.background = 'none'}>
+          <IconMenu s={18} />
+        </button>
+
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--eva-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <IconPlane s={14} />
+          </div>
+          <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 15, letterSpacing: '-0.025em', color: 'var(--text)' }}>
+            EVA <span style={{ color: 'var(--eva-green)' }}>Salary</span>
+          </div>
+        </div>
+
+        <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
+
+        <input value={vals.profile_name} onChange={e => setVal('profile_name', e.target.value)}
+          style={{ background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, minWidth: 60, maxWidth: 140 }} />
+
+        <div style={{ flex: 1 }} />
+
+        {/* Tab toggle */}
+        <div style={{ display: 'flex', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 2 }}>
+          {[['inputs','Inputs'], ['results','Results']].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              padding: '5px 16px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+              fontSize: 12, fontWeight: 600,
+              background: tab === id ? (id === 'inputs' ? 'var(--eva-green)' : 'var(--eva-orange)') : 'transparent',
+              color: tab === id ? '#fff' : 'var(--text-muted)',
+              transition: 'all 0.15s',
+              boxShadow: tab === id ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* Grand total */}
+        <div style={{ background: 'var(--eva-green)', borderRadius: 9, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14, color: '#fff', letterSpacing: '-0.01em' }}>฿{fmt(grand, 0)}</span>
+        </div>
+      </header>
+
+      {/* ── Main ── */}
+      <main style={{ flex: 1, maxWidth: 840, width: '100%', margin: '0 auto', padding: tweaks.compactMode ? '16px 16px 48px' : '24px 16px 64px', display: 'flex', flexDirection: 'column', gap: tweaks.compactMode ? 12 : 16 }}>
+
+        {/* ── INPUTS TAB ── */}
+        {tab === 'inputs' && <>
+          {/* Block Hours */}
+          <Card>
+            <SectionHead icon={<IconClock s={15}/>} title="Block Hours" sub={`Total: ${fmt(total_bh, 2)} hrs this period`} />
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <HHMMInput label="Block Hours" hours={vals.bh_hours} mins={vals.bh_mins}
+                onH={v => setVal('bh_hours', v)} onM={v => setVal('bh_mins', v)}
+                sublabel={`฿${fmt(total_bh_inc, 0)}`} />
+
+              {/* Tier breakdown */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', height: 6, borderRadius: 4, overflow: 'hidden', gap: 2, background: 'var(--bg)' }}>
+                  {[{h: bh_n, m: 70, c: 'var(--eva-green)'}, {h: bh_ot, m: 10, c: 'var(--eva-orange)'}, {h: bh_sot, m: 20, c: '#E02020'}].map(({h,m,c}, i) => (
+                    <div key={i} style={{ flex: m, background: 'var(--border)', borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
+                      <div style={{ position: 'absolute', inset: 0, width: `${Math.min(h/m,1)*100}%`, background: c, transition: 'width 0.35s ease' }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  {[
+                    { label: 'Normal', range: '0–70h', hrs: bh_n, inc: inc_n, color: 'var(--eva-green)', bg: 'var(--eva-green-light)' },
+                    { label: 'OT', range: '71–80h', hrs: bh_ot, inc: inc_ot, color: 'var(--eva-orange)', bg: 'var(--eva-orange-light)' },
+                    { label: 'Super OT', range: '>80h', hrs: bh_sot, inc: inc_sot, color: '#E02020', bg: '#FFF0F0' },
+                  ].map(({label, range, hrs, inc, color, bg}) => (
+                    <div key={label} style={{ background: bg, borderRadius: 'var(--radius-sm)', padding: '10px 12px', border: `1px solid ${color}22` }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color, marginBottom: 4 }}>{label} <span style={{ opacity: 0.6, fontWeight: 400 }}>{range}</span></div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{fmt(hrs)}h</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color, fontWeight: 600, marginTop: 2 }}>฿{fmt(inc, 0)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Per Diem */}
+          <Card>
+            <SectionHead icon={<IconGlobe s={15}/>} title="Per Diem Hours" sub="Hours flown by region type" />
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <HHMMInput label="EUR / Americas / Australia" hours={vals.p1_hours} mins={vals.p1_mins}
+                onH={v => setVal('p1_hours', v)} onM={v => setVal('p1_mins', v)}
+                sublabel={`×${vals.per_diem_euro_mult} = ${fmt(p1_total * vals.per_diem_euro_mult)} USD`} />
+              <Divider />
+              <HHMMInput label="Other Regions" hours={vals.p2_hours} mins={vals.p2_mins}
+                onH={v => setVal('p2_hours', v)} onM={v => setVal('p2_mins', v)}
+                sublabel={`×${vals.per_diem_other_mult} = ${fmt(p2_total * vals.per_diem_other_mult)} USD`} />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, paddingTop: 4 }}>
+                {[
+                  { label: 'Per Diem Base', val: `${fmt(pd_usd)} USD`, color: 'var(--eva-orange)' },
+                  { label: 'After Exchange', val: `฿${fmt(pd_thb, 0)}`, color: 'var(--eva-green)' },
+                ].map(({label, val, color}) => (
+                  <div key={label} style={{ background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 5 }}>{label}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 16, color, letterSpacing: '-0.01em' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          {/* Salary */}
+          <Card>
+            <SectionHead icon={<IconDollar s={15}/>} title="Salary & Allowances" />
+            <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <NumInput label="Base Salary" value={vals.base_salary} onChange={v => setVal('base_salary', v)} step={100} suffix="฿" />
+                <NumInput label="Position Allowance" value={vals.position_allowance} onChange={v => setVal('position_allowance', v)} step={100} suffix="฿" />
+              </div>
+              <Divider />
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, alignItems: 'end' }}>
+                <NumInput label="Transport Rate / Trip" value={vals.transport_rate} onChange={v => setVal('transport_rate', v)} step={50} suffix="฿" />
+                <NumInput label="Trips" value={vals.transport_trips} onChange={v => setVal('transport_trips', v)} step={1} min={0} suffix="×" />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', padding: '10px 14px', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Transport Total</span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>฿{fmt(trans_inc, 0)}</span>
+              </div>
+            </div>
+          </Card>
+
+          <button onClick={() => setTab('results')} style={{
+            width: '100%', padding: 14, borderRadius: 'var(--radius)',
+            background: 'var(--eva-green)', border: 'none', color: '#fff',
+            fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 14,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            letterSpacing: '-0.01em', boxShadow: '0 4px 16px rgba(0,154,66,0.25)',
+            transition: 'box-shadow 0.2s, transform 0.1s',
+          }}
+            onMouseOver={e => e.currentTarget.style.boxShadow = '0 6px 24px rgba(0,154,66,0.35)'}
+            onMouseOut={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,154,66,0.25)'}>
+            View Results  <IconChevR s={15} />
+          </button>
+        </>}
+
+        {/* ── RESULTS TAB ── */}
+        {tab === 'results' && <>
+          {/* Top 3 metrics */}
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+            {/* Grand total — hero card */}
+            <div style={{ background: 'var(--eva-green)', borderRadius: 'var(--radius-lg)', padding: '22px 24px', boxShadow: '0 4px 20px rgba(0,154,66,0.3)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.65)', marginBottom: 8 }}>Total Monthly Income</div>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 32, letterSpacing: '-0.04em', color: '#fff', lineHeight: 1 }}>฿{fmt(grand, 0)}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 6 }}>Thai Baht · {vals.profile_name}</div>
+            </div>
+            {[
+              { label: 'Per Diem (THB)', val: `฿${fmt(pd_thb, 0)}`, sub: `via ${hold_ccy}` },
+              { label: 'Withdrawal', val: `${fmt(hold_amt, 2)}`, sub: hold_ccy },
+            ].map(({label, val, sub}) => (
+              <div key={label} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '18px 20px', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
+                <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 20, letterSpacing: '-0.03em', color: 'var(--text)', lineHeight: 1 }}>{val}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5, fontFamily: "'JetBrains Mono', monospace" }}>{sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Distribution bar */}
+          <Card>
+            <div style={{ padding: '16px 20px 18px' }}>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 13, marginBottom: 14, color: 'var(--text)' }}>Income Distribution</div>
+              <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', gap: 2 }}>
+                {segments.map(({v, color, label}) => (
+                  <div key={label} title={`${label}: ฿${fmt(v,0)}`}
+                    style={{ flex: v, background: color, transition: 'flex 0.5s ease' }} />
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginTop: 14 }}>
+                {segments.map(({v, color, label}) => (
+                  <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{label}</span>
+                    </div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>฿{fmt(v, 0)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{pct(v)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+
+          {/* Detailed breakdown */}
+          {tweaks.showBreakdown && breakdown.map(({ cat, color, rows }) => (
+            <Card key={cat}>
+              <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 3, height: 14, borderRadius: 2, background: color }} />
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--text-muted)' }}>{cat}</span>
+              </div>
+              {rows.map(({ label, detail, amount, ccy }, i) => (
+                <div key={label} style={{
+                  display: 'grid', gridTemplateColumns: '1fr auto',
+                  alignItems: 'center', gap: 16, padding: '12px 20px',
+                  borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none',
+                  background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.012)',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>{detail}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color: ccy === 'THB' ? 'var(--text)' : 'var(--eva-orange)' }}>
+                      {ccy === 'THB' ? '฿' : ccy === 'USD' ? '$' : ''}{fmt(amount)}
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-faint)', marginTop: 2 }}>{ccy}</div>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          ))}
+
+          {/* Grand total row */}
+          <div style={{ background: 'var(--eva-green)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 20px rgba(0,154,66,0.25)' }}>
+            <div>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 16, color: '#fff' }}>Grand Total</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 3 }}>{vals.profile_name}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 28, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1 }}>฿{fmt(grand, 2)}</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 5 }}>Thai Baht</div>
+            </div>
+          </div>
+
+          {/* Thai reminder */}
+          <div style={{
+            background: 'var(--eva-orange-light)', border: '1px solid rgba(234,84,0,0.18)',
+            borderRadius: 'var(--radius)', padding: '14px 18px',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <span style={{ fontSize: 22, flexShrink: 0 }}>💸</span>
+            <p style={{ fontSize: 13.5, color: 'var(--eva-orange)', fontWeight: 600, lineHeight: 1.6, margin: 0 }}>
+              เงินเยอะจังหายไปไหนนะ อย่าลืมวางแผนการเงินนะจร๊ะ
+            </p>
+          </div>
+
+          <button onClick={() => setTab('inputs')} style={{
+            width: '100%', padding: 12, borderRadius: 'var(--radius)',
+            background: 'transparent', border: '1.5px solid var(--border)',
+            color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, transition: 'border-color 0.15s',
+          }}
+            onMouseOver={e => e.currentTarget.style.borderColor = 'var(--eva-green)'}
+            onMouseOut={e => e.currentTarget.style.borderColor = 'var(--border)'}>
+            ← Back to Inputs
+          </button>
+        </>}
+      </main>
+
+      {/* ── TWEAKS ── */}
+      {tweaksOpen && (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 100,
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)', padding: 18, width: 220,
+          boxShadow: 'var(--shadow-lg)',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <span style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 700, fontSize: 13 }}>Tweaks</span>
+            <button onClick={() => setTweaksOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}><IconX s={15}/></button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {[['showBreakdown', 'Show Breakdown'], ['compactMode', 'Compact Mode']].map(([k, label]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-mid)' }}>{label}</span>
+                <button onClick={() => setTweak(k, !tweaks[k])} style={{
+                  width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer',
+                  background: tweaks[k] ? 'var(--eva-green)' : 'var(--border)',
+                  position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                }}>
+                  <span style={{ position: 'absolute', top: 2, left: tweaks[k] ? 18 : 2, width: 16, height: 16, borderRadius: 8, background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                </button>
+              </div>
+            ))}
+            <button onClick={() => setValsRaw(DEFAULT_VALUES)} style={{
+              padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+              background: 'transparent', color: 'var(--text-muted)', fontSize: 12, fontWeight: 500,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              fontFamily: "'Inter', sans-serif", transition: 'border-color 0.15s',
+            }}>
+              <IconRefresh s={12}/> Reset to Defaults
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
