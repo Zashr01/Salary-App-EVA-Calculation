@@ -138,15 +138,54 @@ const inputBase = (focused) => ({
 /* ── NumInput ── */
 const NumInput = ({ label, value, onChange, step = 1, min, max, suffix, note }) => {
   const [focused, setFocused] = useState(false);
+  const [raw, setRaw] = useState(String(value));
+
+  // sync raw when value changes externally
+  React.useEffect(() => {
+    if (!focused) setRaw(String(value));
+  }, [value, focused]);
+
+  const handleChange = (e) => {
+    const str = e.target.value;
+    setRaw(str);
+    // allow empty or minus sign while typing
+    if (str === '' || str === '-') return;
+    const v = parseFloat(str);
+    if (!isNaN(v)) {
+      if (min !== undefined && v < min) return;
+      if (max !== undefined && v > max) return;
+      onChange(v);
+    }
+  };
+
+  const handleBlur = () => {
+    setFocused(false);
+    const v = parseFloat(raw);
+    if (isNaN(v)) {
+      setRaw(String(value)); // revert to last valid
+    } else {
+      const clamped = min !== undefined ? Math.max(min, v) : v;
+      setRaw(String(clamped));
+      onChange(clamped);
+    }
+  };
+
+  const handleFocus = (e) => {
+    setFocused(true);
+    // select all on focus so user can type over immediately
+    e.target.select();
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       {label && <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.055em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{label}</label>}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <input
-          type="number" value={value} step={step} min={min} max={max}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
+          type="number" inputMode="decimal" value={focused ? raw : value}
+          step={step} min={min} max={max}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onChange={handleChange}
           style={{ ...inputBase(focused), paddingRight: suffix ? 36 : 12 }}
         />
         {suffix && <span style={{ position: 'absolute', right: 10, fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', pointerEvents: 'none', letterSpacing: '0.02em' }}>{suffix}</span>}
@@ -164,8 +203,8 @@ const HHMMInput = ({ label, hours, mins, onH, onM, sublabel }) => (
       {sublabel && <span style={{ fontSize: 11, color: 'var(--eva-green)', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{sublabel}</span>}
     </div>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-      <NumInput value={hours} onChange={onH} step={1} min={0} suffix="h" />
-      <NumInput value={mins} onChange={onM} step={1} min={0} max={59} suffix="m" />
+      <NumInput value={hours} onChange={v => onH(Math.floor(v))} step={1} min={0} suffix="h" />
+      <NumInput value={mins} onChange={v => onM(Math.floor(v))} step={1} min={0} max={59} suffix="m" />
     </div>
   </div>
 );
@@ -499,36 +538,29 @@ function App() {
         position: 'sticky', top: 0, zIndex: 40,
         background: 'rgba(247,248,246,0.92)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--border)',
-        height: 56, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px',
+        height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px',
       }}>
-        <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 5, borderRadius: 'var(--radius-sm)', transition: 'background 0.1s' }}
-          onMouseOver={e => e.currentTarget.style.background = 'var(--eva-green-light)'}
-          onMouseOut={e => e.currentTarget.style.background = 'none'}>
+        <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', padding: 4, borderRadius: 'var(--radius-sm)', flexShrink: 0 }}>
           <IconMenu s={18} />
         </button>
 
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: 'var(--eva-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-            <IconPlane s={14} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--eva-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+            <IconPlane s={13} />
           </div>
-          <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 15, letterSpacing: '-0.025em', color: 'var(--text)' }}>
+          <div style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontWeight: 800, fontSize: 14, letterSpacing: '-0.025em', color: 'var(--text)' }}>
             EVA <span style={{ color: 'var(--eva-green)' }}>Salary</span>
           </div>
         </div>
 
-        <div style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 4px' }} />
-
-        <input value={vals.profile_name} onChange={e => setVal('profile_name', e.target.value)}
-          style={{ background: 'transparent', border: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", fontSize: 13, color: 'var(--text-muted)', fontWeight: 500, minWidth: 40, maxWidth: 100, display: window.innerWidth < 400 ? 'none' : 'block' }} />
-
         <div style={{ flex: 1 }} />
 
         {/* Tab toggle */}
-        <div style={{ display: 'flex', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 2 }}>
+        <div style={{ display: 'flex', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: 3, gap: 2, flexShrink: 0 }}>
           {[['inputs','Inputs'], ['results','Results']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{
-              padding: '5px 16px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+              padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
               fontSize: 12, fontWeight: 600,
               background: tab === id ? (id === 'inputs' ? 'var(--eva-green)' : 'var(--eva-orange)') : 'transparent',
               color: tab === id ? '#fff' : 'var(--text-muted)',
@@ -539,9 +571,8 @@ function App() {
         </div>
 
         {/* Grand total pill */}
-        <div style={{ background: 'var(--eva-green)', borderRadius: 9, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 14, color: '#fff', letterSpacing: '-0.01em' }}>฿{fmt(grand, 0)}</span>
+        <div style={{ background: 'var(--eva-green)', borderRadius: 9, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13, color: '#fff', letterSpacing: '-0.01em' }}>฿{fmt(grand, 0)}</span>
         </div>
       </header>
 
